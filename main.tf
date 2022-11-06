@@ -27,5 +27,40 @@ resource "kind_cluster" "k8s-simple" {
     node {
       role = "worker"
     }
+
+    networking {
+      disable_default_cni = "true"
+      pod_subnet          = "10.10.0.0/16"
+      service_subnet      = "10.11.0.0/16"
+    }
   }
 }
+
+resource "helm_release" "cni" {
+  depends_on = [
+    kind_cluster.k8s-simple
+  ]
+
+  name       = "cilium"
+  chart      = "cilium"
+  repository = "https://helm.cilium.io/"
+  version    = "1.9.18"
+
+  namespace = "kube-system"
+
+  values = [
+    "nodeinit.enabled: true",
+    "kubeProxyReplacement: partial",
+    "hostServices.enabled: false",
+    "externalIPs.enabled: true",
+    "nodePort.enabled: true",
+    "hostPort.enabled: true",
+    "bpf.masquerade: false",
+    "image.pullPolicy: IfNotPresent",
+    "ipam.mode: kubernetes",
+    "hubble.listenAddress: ':4244'",
+    "hubble.relay.enabled: true",
+    "hubble.ui.enabled: true",
+  ]
+}
+
