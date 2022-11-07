@@ -27,6 +27,9 @@ resource "kind_cluster" "k8s-simple" {
     node {
       role = "worker"
     }
+    node {
+      role = "worker"
+    }
 
     networking {
       disable_default_cni = "true"
@@ -36,9 +39,28 @@ resource "kind_cluster" "k8s-simple" {
   }
 }
 
-resource "helm_release" "cni" {
+resource "null_resource" "kubernetes_setup_for_ready" {
   depends_on = [
     kind_cluster.k8s-simple
+  ]
+  provisioner "local-exec" {
+    command = <<EOF
+    export all_nodes=$(
+   	kubectl get nodes \
+   	-o custom-columns=NAME:.metadata.name \
+   	| tail -n +2)	&&  
+   	kubectl taint node $all_nodes \
+   	node.kubernetes.io/not-ready:NoSchedule-
+    EOF
+  }
+
+}
+
+
+resource "helm_release" "cni" {
+  depends_on = [
+    kind_cluster.k8s-simple,
+    null_resource.kubernetes_setup_for_ready
   ]
 
   name       = "cilium"
