@@ -27,6 +27,7 @@ resource "kind_cluster" "k8s-simple" {
     node {
       role = "worker"
     }
+
     node {
       role = "worker"
     }
@@ -39,50 +40,56 @@ resource "kind_cluster" "k8s-simple" {
   }
 }
 
-resource "null_resource" "kubernetes_setup_for_ready" {
-  depends_on = [
-    kind_cluster.k8s-simple
-  ]
-  provisioner "local-exec" {
-    command = <<EOF
-    export all_nodes=$(
-   	kubectl get nodes \
-   	-o custom-columns=NAME:.metadata.name \
-   	| tail -n +2)	&&  
-   	kubectl taint node $all_nodes \
-   	node.kubernetes.io/not-ready:NoSchedule-
-    EOF
-  }
-
-}
-
-
 resource "helm_release" "cni" {
   depends_on = [
     kind_cluster.k8s-simple,
-    null_resource.kubernetes_setup_for_ready
+    # null_resource.kubernetes_setup_for_ready
   ]
 
   name       = "cilium"
   chart      = "cilium"
   repository = "https://helm.cilium.io/"
-  version    = "1.9.18"
+  version    = "1.12.3"
 
   namespace = "kube-system"
 
   values = [
-    "nodeinit.enabled: true",
-    "kubeProxyReplacement: partial",
-    "hostServices.enabled: false",
-    "externalIPs.enabled: true",
-    "nodePort.enabled: true",
-    "hostPort.enabled: true",
-    "bpf.masquerade: false",
-    "image.pullPolicy: IfNotPresent",
-    "ipam.mode: kubernetes",
-    "hubble.listenAddress: ':4244'",
-    "hubble.relay.enabled: true",
-    "hubble.ui.enabled: true",
+    <<EOF
+    nodeinit.enabled: true
+    kubeProxyReplacement: partial
+    hostServices.enabled: false
+    externalIPs.enabled: true
+    nodePort.enabled: true
+    hostPort.enabled: true
+    bpf.masquerade: false
+    image.pullPolicy: IfNotPresent
+    ipam.mode: kubernetes
+    hubble.listenAddress: ':4244'
+    hubble.relay.enabled: true
+    hubble.ui.enabled: true
+    tolerations.0.key: node.kubernetes.io/not-read"
+    tolerations.0.effect: NoSchedule
+    EOF
+  ]
+}
+
+resource "helm_release" "secrets" {
+  depends_on = [
+    helm_release.cni
+  ]
+  name       = "vault"
+  chart      = "vault"
+  repository = "https://helm.releases.hashicorp.com"
+  version    = "v0.22.1"
+
+  namespace        = "secrets"
+  create_namespace = true
+
+  values = [
+    "server.affinity: ''",
+    "server.ha.enabled: true",
+    "server.ha.replicas: 2",
+    "server.ha.raft.enabled: true",
   ]
 }
 
